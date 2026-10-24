@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#111111" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Song Reveal</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icons/icon.svg" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <button id="backButton" class="icon-button hidden" type="button" aria-label="Zur Pack-Auswahl">←</button>
+      <div>
+        <div class="eyebrow">SONG REVEAL</div>
+        <h1 id="screenTitle">Packs</h1>
+      </div>
+      <button id="installButton" class="secondary-button hidden" type="button">Installieren</button>
+    </header>
+
+    <section id="libraryScreen" class="screen active" aria-labelledby="screenTitle">
+      <div class="intro-card">
+        <p>Pack auswählen, Song starten, Lösung aufdecken. Punkte und Reihenfolge macht ihr am Tisch.</p>
+      </div>
+      <div id="packList" class="pack-list" aria-live="polite"></div>
+      <label class="import-button" for="packFileInput">＋ Pack importieren</label>
+      <input id="packFileInput" class="visually-hidden" type="file" accept="application/json,.json" />
+      <p id="libraryMessage" class="message" role="status"></p>
+    </section>
+
+    <section id="playScreen" class="screen" aria-live="polite">
+      <div class="round-meta">
+        <span id="roundLabel">Runde 1 / 1</span>
+        <button id="shuffleButton" class="text-button" type="button">Neu mischen</button>
+      </div>
+      <article class="song-card">
+        <div id="mysteryState">
+          <div class="record" aria-hidden="true"><div class="record-label">?</div></div>
+          <p class="mystery-label">Unbekannter Song</p>
+          <a id="playLink" class="primary-button" href="#" target="_blank" rel="noopener noreferrer">▶ Song starten</a>
+          <button id="revealButton" class="secondary-button large" type="button">👁 Lösung aufdecken</button>
+        </div>
+        <div id="revealState" class="hidden">
+          <div class="solution-label">Lösung</div>
+          <h2 id="songTitle"></h2>
+          <p id="songArtist" class="artist"></p>
+          <div id="songYear" class="year"></div>
+          <button id="nextButton" class="primary-button" type="button">Nächster Song →</button>
+        </div>
+      </article>
+      <button id="skipButton" class="text-button danger-soft" type="button">Song funktioniert nicht · überspringen</button>
+      <p id="playMessage" class="message" role="status"></p>
+    </section>
+  </main>
+
+  <dialog id="confirmDialog">
+    <form method="dialog" class="dialog-card">
+      <h2 id="dialogTitle">Bestätigen</h2>
+      <p id="dialogText"></p>
+      <div class="dialog-actions">
+        <button value="cancel" class="secondary-button">Abbrechen</button>
+        <button id="dialogConfirm" value="confirm" class="danger-button">Bestätigen</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="./game-core.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
