@@ -73,6 +73,21 @@
     return { ...pack, __builtin: true };
   }
 
+  function normalizeAmazonPlayUrl(url) {
+    try {
+      const parsed = new URL(url);
+      if (/amazon\.(de|com|co\.uk|fr|it|es)$/i.test(parsed.hostname) || /music\.amazon\./i.test(parsed.hostname)) {
+        if (!parsed.searchParams.has('do')) parsed.searchParams.set('do', 'play');
+      }
+      return parsed.toString();
+    } catch {
+      if (typeof url === 'string' && url && !/[?&]do=/.test(url)) {
+        return url + (url.includes('?') ? '&' : '?') + 'do=play';
+      }
+      return url;
+    }
+  }
+
   function progressKey(packId) { return `${PROGRESS_PREFIX}${packId}`; }
   function getProgress(pack) {
     try {
@@ -155,7 +170,7 @@
   function renderRound() {
     const song = Core.currentSong(currentPack, currentProgress);
     els.roundLabel.textContent = `Runde ${currentProgress.cursor + 1} / ${currentPack.songs.length}`;
-    els.playLink.href = song.amazon_play_url;
+    els.playLink.href = normalizeAmazonPlayUrl(song.amazon_play_url);
     els.songTitle.textContent = song.title;
     els.songArtist.textContent = song.artist;
     els.songYear.textContent = song.scoring_year;
