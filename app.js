@@ -1,10 +1,10 @@
 (() => {
   'use strict';
-  const Core = window.SongRevealCore;
-  const DB_NAME = 'song-reveal';
+  const Core = window.NerdioCore;
+  const DB_NAME = 'nerdio';
   const DB_VERSION = 1;
   const PACK_STORE = 'packs';
-  const PROGRESS_PREFIX = 'song-reveal-progress:';
+  const PROGRESS_PREFIX = 'nerdio-progress:';
 
   let db;
   let currentPack = null;
@@ -142,7 +142,7 @@
     els.libraryScreen.classList.toggle('active', !play);
     els.playScreen.classList.toggle('active', play);
     els.backButton.classList.toggle('hidden', !play);
-    els.screenTitle.textContent = play ? currentPack.playlist_name : 'Packs';
+    els.screenTitle.textContent = play ? currentPack.playlist_name : 'NERDIO';
   }
 
   function openPack(pack) {
