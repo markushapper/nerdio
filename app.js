@@ -23,7 +23,8 @@
     songYear: document.getElementById('songYear'), nextButton: document.getElementById('nextButton'),
     skipButton: document.getElementById('skipButton'), playMessage: document.getElementById('playMessage'),
     dialog: document.getElementById('confirmDialog'), dialogTitle: document.getElementById('dialogTitle'),
-    dialogText: document.getElementById('dialogText'), dialogConfirm: document.getElementById('dialogConfirm')
+    dialogText: document.getElementById('dialogText'), dialogConfirm: document.getElementById('dialogConfirm'),
+    timerSeconds: document.getElementById('timerSeconds'), timerStatus: document.getElementById('timerStatus')
   };
 
   function openDb() {
@@ -167,10 +168,62 @@
     renderRound();
   }
 
+  let countdownHandle = null;
+
+  function isNativeMode() {
+    return Boolean(window.NerdioNative && typeof window.NerdioNative.playSong === 'function');
+  }
+
+  function stopCountdown(label = 'Bereit') {
+    if (countdownHandle) clearInterval(countdownHandle);
+    countdownHandle = null;
+    if (els.timerStatus) els.timerStatus.textContent = label;
+  }
+
+  function startCountdown(seconds) {
+    stopCountdown();
+    let remaining = Number(seconds) || 10;
+    if (els.timerStatus) els.timerStatus.textContent = remaining + ' s';
+    countdownHandle = setInterval(() => {
+      remaining -= 1;
+      if (remaining <= 0) {
+        stopCountdown('Pausiert');
+        return;
+      }
+      if (els.timerStatus) els.timerStatus.textContent = remaining + ' s';
+    }, 1000);
+  }
+
+  window.NerdioNativeCallbacks = {
+    onPlaybackStarted(seconds) { startCountdown(seconds); },
+    onPlaybackPaused() { stopCountdown('Pausiert'); },
+    onError(message) { stopCountdown('Fehler'); setMessage(els.playMessage, message, true); }
+  };
+
+  window.addEventListener('nerdio-native-ready', () => {
+    document.body.classList.add('native-mode');
+  });
+
   function renderRound() {
     const song = Core.currentSong(currentPack, currentProgress);
     els.roundLabel.textContent = `Runde ${currentProgress.cursor + 1} / ${currentPack.songs.length}`;
-    els.playLink.href = normalizeAmazonPlayUrl(song.amazon_play_url);
+    const playUrl = normalizeAmazonPlayUrl(song.amazon_play_url);
+    els.playLink.href = playUrl;
+    if (isNativeMode()) {
+      els.playLink.removeAttribute('target');
+      els.playLink.removeAttribute('rel');
+      els.playLink.onclick = event => {
+        event.preventDefault();
+        stopCountdown('Startet …');
+        const seconds = Number(els.timerSeconds?.value || localStorage.getItem('nerdio-timer-seconds') || 10);
+        localStorage.setItem('nerdio-timer-seconds', String(seconds));
+        window.NerdioNative.playSong(playUrl, seconds);
+      };
+    } else {
+      els.playLink.onclick = null;
+      els.playLink.target = '_blank';
+      els.playLink.rel = 'noopener noreferrer';
+    }
     els.songTitle.textContent = song.title;
     els.songArtist.textContent = song.artist;
     els.songYear.textContent = song.scoring_year;
@@ -218,6 +271,11 @@
   }
 
   els.fileInput.addEventListener('change', e => { if (e.target.files?.[0]) importPack(e.target.files[0]); });
+  if (els.timerSeconds) {
+    const savedTimer = localStorage.getItem('nerdio-timer-seconds');
+    if (savedTimer && [...els.timerSeconds.options].some(o => o.value === savedTimer)) els.timerSeconds.value = savedTimer;
+    els.timerSeconds.addEventListener('change', () => localStorage.setItem('nerdio-timer-seconds', els.timerSeconds.value));
+  }
   els.backButton.addEventListener('click', () => { currentPack = null; currentProgress = null; showScreen('library'); renderLibrary(); });
   els.revealButton.addEventListener('click', reveal);
   els.nextButton.addEventListener('click', () => nextSong(false));
