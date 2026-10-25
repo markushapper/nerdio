@@ -1,0 +1,57 @@
+name: Build Nerdio Pack Builder Skill
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "skills/nerdio-pack-builder/**"
+      - ".github/workflows/nerdio-pack-builder-skill.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "skills/nerdio-pack-builder/**"
+      - ".github/workflows/nerdio-pack-builder-skill.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package-skill:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run validator tests
+        run: |
+          python3 -m unittest discover             -s skills/nerdio-pack-builder/tests             -p 'test_*.py'             -v
+
+      - name: Verify required skill files
+        run: |
+          test -f skills/nerdio-pack-builder/SKILL.md
+          test -f skills/nerdio-pack-builder/agents/openai.yaml
+          test -f skills/nerdio-pack-builder/scripts/validate_pack.py
+          test -f skills/nerdio-pack-builder/references/gamepack-schema.json
+
+      - name: Build skill.zip
+        run: |
+          rm -rf dist
+          mkdir -p dist
+          cd skills
+          zip -r ../dist/skill.zip nerdio-pack-builder             -x '*/__pycache__/*' '*.pyc'
+
+      - name: Verify package
+        run: |
+          unzip -t dist/skill.zip
+          unzip -l dist/skill.zip | grep -F 'nerdio-pack-builder/SKILL.md'
+          test "$(stat -c%s dist/skill.zip)" -le 26214400
+
+      - name: Upload skill.zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: nerdio-pack-builder-skill
+          path: dist/skill.zip
+          if-no-files-found: error
+          retention-days: 90
