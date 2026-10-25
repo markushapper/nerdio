@@ -50,6 +50,18 @@
         <button id="shuffleButton" class="text-button" type="button">Neu mischen</button>
       </div>
 
+      <div id="nativeTimerBar" class="timer-bar native-only">
+        <label for="timerSeconds">Songdauer</label>
+        <select id="timerSeconds" aria-label="Songdauer">
+          <option value="5">5 s</option>
+          <option value="10" selected>10 s</option>
+          <option value="15">15 s</option>
+          <option value="20">20 s</option>
+          <option value="30">30 s</option>
+        </select>
+        <span id="timerStatus" class="timer-status">Bereit</span>
+      </div>
+
       <article class="song-card neon-panel">
         <div id="mysteryState">
           <div class="record-wrap" aria-hidden="true">
