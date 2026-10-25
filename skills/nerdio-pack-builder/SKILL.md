@@ -1,6 +1,6 @@
 ---
 name: nerdio-pack-builder
-description: Build a reusable READY Nerdio game pack from one public Amazon Music Germany playlist and persist it in connected Google Drive. Use when the user wants to create or refresh a Nerdio music pack from an Amazon Music DE playlist URL. Preserve playlist playback identity, use MusicBrainz primarily for scoring years, canonicalize every Amazon play URL to an autoplay-safe album link with trackAsin and do=play, validate the pack deterministically, and never run gameplay.
+description: Build a reusable READY Nerdio game pack from one public Amazon Music Germany playlist and persist it in connected Google Drive. Use when the user wants to create or refresh a Nerdio music pack from an Amazon Music DE playlist URL. Preserve playlist playback identity, use MusicBrainz primarily for scoring years, canonicalize every Amazon play URL to an autoplay-safe album link with trackAsin and do=play, validate the pack deterministically, persist a real application/json Drive file (not a Google Doc), verify its raw bytes, and never run gameplay.
 ---
 
 # Nerdio Pack Builder
@@ -13,6 +13,7 @@ Build one reusable `gamepack.json` from a public Amazon Music Germany playlist. 
 - **Do not open individual Amazon track or album pages in the normal path.** Per-track Amazon lookup is fallback-only when the playlist entry does not expose a usable play URL.
 - **MusicBrainz supplies chronology.** For ordinary songs, search title + main artist and use the earliest official release year of the clearly matching recording.
 - **The validator owns final playback-link normalization.** The normal validation pass rewrites any usable Amazon Music DE album link into the canonical Nerdio form `https://music.amazon.de/albums/<ALBUM_ASIN>?trackAsin=<TRACK_ASIN>&do=play`. The final Drive copy must pass strict check-only validation without modification.
+- **Deliver an actual JSON file.** A native Google Doc named `gamepack.json` is not an importable gamepack. Google Drive must store the output as a raw file with MIME type `application/json`; verify the MIME type and read back raw bytes before reporting success.
 - Escalate only for real version ambiguity such as live, remix, re-recording, acoustic, demo, edit, or cover conflicts.
 
 Read `references/verification-policy.md` before researching tracks.
@@ -30,6 +31,8 @@ Read `references/verification-policy.md` before researching tracks.
 - Write `status = "NOT_READY"` before validation. Only `scripts/validate_pack.py` may set `READY`.
 - Never hand-edit the final `amazon_play_url` after validation.
 - Never start the game, assign start years, shuffle songs, or reveal links as gameplay.
+- Never use `import_document` or create a Google Doc as the final `gamepack.json`. Filename and JSON-looking text do not make a Google Doc a JSON file.
+- Never claim `Drive: PASSED` from upload acknowledgement, file title, or parsed Google Docs text alone. Require actual `application/json` metadata plus raw-byte readback and strict validation.
 
 ## Workflow
 
@@ -52,10 +55,14 @@ Read `references/verification-policy.md` before researching tracks.
 11. Run a local strict verification pass:
    `python scripts/validate_pack.py gamepack.json --check-only`
    Do not persist a pack that fails this pass.
-12. Persist the exact validated JSON to connected Google Drive at `Nerdio/Gamepacks/<playlist_name>/gamepack.json`.
-13. Read the stored Drive copy back, strip a transport BOM if present, and run:
+12. Read `references/google-drive-handoff.md` and persist the **actual locally validated `gamepack.json` bytes** in connected Google Drive at `Nerdio/Gamepacks/<playlist_name>/gamepack.json`, using a raw file upload/update, not a native Google Doc.
+13. Read Drive file metadata after upload. Require name `gamepack.json` and MIME type exactly `application/json`; a Google Docs MIME type is a **hard failure**, regardless of its name.
+14. Download the **raw stored file bytes** into `drive-copy.json` (not the Google Doc text extraction). Run:
    `python scripts/validate_pack.py drive-copy.json --check-only`
-14. Report Drive handoff complete only after read-back validation passes.
+15. Save Drive metadata as `drive-metadata.json` and run the stronger handoff check:
+   `python scripts/verify_drive_handoff.py --source gamepack.json --drive-copy drive-copy.json --metadata drive-metadata.json`
+   It checks actual MIME type, name, strict pack validity, and byte-for-byte equality with the validated local source.
+16. Report `Drive: PASSED` only when both checks exit 0. If raw upload or raw download is unavailable, report Drive handoff as **FAILED/UNVERIFIED**, supply the local validated `.json` download, and never substitute a Google Doc as a successful result.
 
 ## Canonical Amazon playback URL
 
@@ -132,6 +139,8 @@ If optional `amazon_album_id` or `amazon_track_asin` are present, the validator 
 
 ## Final report
 
+Print the READY report only when the raw Drive file passed metadata, raw-byte readback, and strict validation. Otherwise report local validation separately and mark `Drive: FAILED/UNVERIFIED`; do not describe the overall handoff as complete.
+
 ```text
 NERDIO PACK READY
 Playlist: ...
@@ -150,4 +159,6 @@ Drive: PASSED
 - `references/gamepack-schema.json`
 - `references/google-drive-handoff.md`
 - `scripts/validate_pack.py`
+- `scripts/verify_drive_handoff.py`
 - `tests/test_validate_pack.py`
+- `tests/test_verify_drive_handoff.py`
