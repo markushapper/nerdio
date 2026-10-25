@@ -1,4 +1,4 @@
-name: Deploy Song Reveal to GitHub Pages
+name: Deploy Nerdio to GitHub Pages
 
 on:
   push:
