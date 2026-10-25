@@ -1,4 +1,4 @@
-const CACHE = 'nerdio-v3';
+const CACHE = 'nerdio-v4';
 const ASSETS = [
   './', './index.html', './styles.css', './game-core.js', './app.js',
   './manifest.webmanifest', './packs/halloween.json', './icons/icon.svg'
