@@ -53,6 +53,12 @@ a, button, label { -webkit-tap-highlight-color: transparent; }
 .text-button { background: transparent; color: var(--text-muted); border: 0; padding: 6px 0; cursor: pointer; }
 .danger-soft { color: #ffabb9; display: block; margin: 12px auto 0; }
 .round-meta { display: flex; justify-content: space-between; align-items: center; color: var(--text-muted); margin-bottom: 12px; font-size: .96rem; }
+.native-only { display: none !important; }
+body.native-mode .native-only { display: flex !important; }
+.timer-bar { align-items: center; gap: 10px; margin: -2px 0 12px; padding: 10px 12px; border-radius: 16px; background: rgba(239,255,41,.06); border: 1px solid rgba(239,255,41,.18); color: var(--text-muted); }
+.timer-bar label { font-weight: 800; color: #fff; }
+.timer-bar select { min-height: 38px; border: 1px solid rgba(239,255,41,.32); border-radius: 10px; padding: 0 10px; background: #11162a; color: #fff; font-weight: 800; }
+.timer-status { margin-left: auto; color: var(--brand); font-weight: 900; font-variant-numeric: tabular-nums; }
 .song-card { border-radius: 30px; padding: 24px 18px; text-align: center; }
 .record-wrap { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; margin-bottom: 18px; }
 .wave { height: 76px; position: relative; }
