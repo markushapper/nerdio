@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/nerdio/gamepack-schema-1.4.json",
+  "title": "Nerdio Reusable Playlist Game Pack",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "pack_id",
+    "playlist_url",
+    "playlist_name",
+    "created_at",
+    "validated_song_count",
+    "status",
+    "validation",
+    "songs"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.4"
+    },
+    "pack_id": {
+      "type": "string",
+      "minLength": 3
+    },
+    "playlist_url": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^https://music\\.amazon\\.de/"
+    },
+    "playlist_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "validated_song_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "NOT_READY",
+        "READY"
+      ]
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "validator_version",
+        "validated_at",
+        "songs_sha256"
+      ],
+      "properties": {
+        "validator_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "validated_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "songs_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "songs": {
+      "type": "array",
+      "minItems": 20,
+      "items": {
+        "$ref": "#/$defs/song"
+      }
+    }
+  },
+  "$defs": {
+    "song": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "song_id",
+        "title",
+        "artist",
+        "scoring_year",
+        "amazon_play_url",
+        "verification_status",
+        "verification_notes"
+      ],
+      "properties": {
+        "song_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "artist": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scoring_year": {
+          "type": "integer",
+          "minimum": 1800,
+          "maximum": 2100
+        },
+        "amazon_play_url": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^https://music\\.amazon\\.de/albums/[A-Z0-9]{10}\\?trackAsin=[A-Z0-9]{10}&do=play$"
+        },
+        "verification_status": {
+          "const": "OK"
+        },
+        "verification_notes": {
+          "type": "string",
+          "minLength": 1
+        },
+        "album": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "duration_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "amazon_album_id": {
+          "type": "string",
+          "pattern": "^[A-Z0-9]{10}$"
+        },
+        "amazon_track_asin": {
+          "type": "string",
+          "pattern": "^[A-Z0-9]{10}$"
+        },
+        "musicbrainz_recording_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "isrc": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}
