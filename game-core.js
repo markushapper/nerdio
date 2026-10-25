@@ -1,7 +1,7 @@
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
-  root.SongRevealCore = api;
+  root.NerdioCore = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   function validatePack(pack) {
     const errors = [];
