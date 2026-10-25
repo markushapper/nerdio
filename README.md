@@ -1,6 +1,6 @@
-# Song Reveal PWA
+# Nerdio PWA
 
-Minimaler Song-Kartenstapel ohne Spielwertung: **Song starten → Lösung aufdecken → nächster Song**.
+**MUSIC · PLAY** — Song starten, analog mit den drei Nerdio-Karten spielen, Lösung aufdecken.
 
 ## Enthalten
 
