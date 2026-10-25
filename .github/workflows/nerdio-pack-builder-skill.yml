@@ -43,6 +43,7 @@ jobs:
           cp -R skills/nerdio-pack-builder/assets dist/stage/nerdio-pack-builder/
           cp -R skills/nerdio-pack-builder/references dist/stage/nerdio-pack-builder/
           cp -R skills/nerdio-pack-builder/scripts dist/stage/nerdio-pack-builder/
+          cp -R skills/nerdio-pack-builder/tests dist/stage/nerdio-pack-builder/
           find dist/stage -type d -name '__pycache__' -prune -exec rm -rf {} +
           find dist/stage -type f -name '*.pyc' -delete
           cd dist/stage
@@ -53,6 +54,8 @@ jobs:
           unzip -t dist/skill.zip
           test "$(unzip -Z1 dist/skill.zip | grep -c '/SKILL.md$')" -eq 1
           unzip -l dist/skill.zip | grep -F 'nerdio-pack-builder/SKILL.md'
+          unzip -l dist/skill.zip | grep -F 'nerdio-pack-builder/agents/openai.yaml'
+          unzip -l dist/skill.zip | grep -F 'nerdio-pack-builder/tests/test_validate_pack.py'
           test "$(stat -c%s dist/skill.zip)" -le 26214400
 
       - name: Upload CI artifact
