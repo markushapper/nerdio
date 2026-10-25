@@ -1,4 +1,4 @@
-const CACHE = 'song-reveal-v1';
+const CACHE = 'nerdio-v2';
 const ASSETS = [
   './', './index.html', './styles.css', './game-core.js', './app.js',
   './manifest.webmanifest', './packs/halloween.json', './icons/icon.svg'
