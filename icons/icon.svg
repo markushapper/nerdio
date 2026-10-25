@@ -1,7 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#111111"/>
-  <circle cx="256" cy="256" r="154" fill="#1d1d20" stroke="#f8d64e" stroke-width="18"/>
-  <circle cx="256" cy="256" r="58" fill="#f8d64e"/>
-  <circle cx="256" cy="256" r="16" fill="#111111"/>
-  <path d="M347 133c-8 0-15 7-15 15v151a71 71 0 1 0 30 58V191l70 18v-40l-85-36z" fill="#f8d64e"/>
+  <defs>
+    <radialGradient id="g" cx="50%" cy="45%" r="75%">
+      <stop offset="0%" stop-color="#141a34"/>
+      <stop offset="100%" stop-color="#090b16"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#g)"/>
+  <circle cx="256" cy="256" r="182" fill="none" stroke="#1d274b" stroke-width="8" opacity="0.9"/>
+  <circle cx="256" cy="256" r="152" fill="none" stroke="#11162d" stroke-width="12" opacity="0.9"/>
+  <path d="M82 297 C 107 297, 118 167, 157 167 C 196 167, 202 340, 248 340 C 295 340, 305 140, 350 140 C 389 140, 396 282, 430 282" fill="none" stroke="#efff29" stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
