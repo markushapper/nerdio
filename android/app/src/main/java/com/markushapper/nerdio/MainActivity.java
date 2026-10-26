@@ -30,9 +30,9 @@ import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 
 public class MainActivity extends Activity {
-    private static final String APP_URL = "https://markushapper.github.io/song-reveal/?native=1";
+    private static final String APP_URL = "https://markushapper.github.io/nerdio/?native=1";
     private static final String APP_HOST = "markushapper.github.io";
-    private static final String APP_PATH = "/song-reveal/";
+    private static final String APP_PATH = "/nerdio/";
     private static final String AMAZON_PACKAGE = "com.amazon.mp3";
     private static final int FILE_CHOOSER_REQUEST = 7001;
     private static final long AMAZON_HANDOFF_MS = 700L;
