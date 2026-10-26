@@ -16,6 +16,7 @@ import android.provider.Settings;
 import android.os.SystemClock;
 import android.view.KeyEvent;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -312,6 +313,14 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void setKeepScreenOn(boolean keepScreenOn) {
+        if (keepScreenOn) {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        } else {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        }
+    }
+
     private void pauseCurrentMedia() {
         AudioManager audioManager =
                 (AudioManager) getSystemService(Context.AUDIO_SERVICE);
@@ -496,6 +505,11 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void pauseNow() {
             MainActivity.this.pauseNow();
+        }
+
+        @JavascriptInterface
+        public void setKeepScreenOn(boolean keepScreenOn) {
+            runOnUiThread(() -> MainActivity.this.setKeepScreenOn(keepScreenOn));
         }
 
         @JavascriptInterface
