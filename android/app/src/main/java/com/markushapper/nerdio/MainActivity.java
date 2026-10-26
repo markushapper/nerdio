@@ -19,6 +19,7 @@ import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
@@ -35,9 +36,12 @@ public class MainActivity extends Activity {
     private static final String APP_PATH = "/nerdio/";
     private static final String AMAZON_PACKAGE = "com.amazon.mp3";
     private static final int FILE_CHOOSER_REQUEST = 7001;
-    private static final long PLAYBACK_FIRST_CHECK_MS = 250L;
+    private static final long PLAYBACK_FIRST_CHECK_MS = 150L;
     private static final long PLAYBACK_POLL_MS = 100L;
     private static final long PLAYBACK_START_TIMEOUT_MS = 5000L;
+    private static final long FOREGROUND_RETRY_MS = 150L;
+    private static final int FOREGROUND_MAX_ATTEMPTS = 12;
+    private static final long COVER_RELEASE_DELAY_MS = 350L;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private FrameLayout activityHost;
@@ -48,8 +52,12 @@ public class MainActivity extends Activity {
     private ValueCallback<Uri[]> filePathCallback;
     private Runnable pauseRunnable;
     private Runnable returnRunnable;
+    private Runnable foregroundRetryRunnable;
+    private Runnable coverReleaseRunnable;
     private PowerManager.WakeLock wakeLock;
     private long playbackLaunchUptime;
+    private boolean returningToNerdio = false;
+    private int foregroundAttempts = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -158,21 +166,25 @@ public class MainActivity extends Activity {
         }
 
         cancelScheduledPlayback(false);
-        if (!attachPlaybackCover()) {
-            notifyNativeError("Nerdio-Sichtschutz konnte nicht gestartet werden.");
-            return;
-        }
-
         acquireWakeLock((seconds * 1000L) + PLAYBACK_START_TIMEOUT_MS + 5000L);
 
+        if (!attachPlaybackCover(() -> launchAmazonAndWaitForPlayback(uri, seconds))) {
+            releaseWakeLock();
+            notifyNativeError("Nerdio-Sichtschutz konnte nicht gestartet werden.");
+        }
+    }
+
+    private void launchAmazonAndWaitForPlayback(Uri uri, int seconds) {
         Intent amazon = new Intent(Intent.ACTION_VIEW, uri);
         amazon.setPackage(AMAZON_PACKAGE);
         try {
             startActivity(amazon);
+            overridePendingTransition(0, 0);
         } catch (ActivityNotFoundException ex) {
             Intent fallback = new Intent(Intent.ACTION_VIEW, uri);
             try {
                 startActivity(fallback);
+                overridePendingTransition(0, 0);
             } catch (ActivityNotFoundException ignored) {
                 releaseWakeLock();
                 detachPlaybackCover();
@@ -187,7 +199,7 @@ public class MainActivity extends Activity {
             public void run() {
                 AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
                 if (audioManager != null && audioManager.isMusicActive()) {
-                    bringNerdioToFront();
+                    returnRunnable = null;
                     notifyPlaybackStarted(seconds);
                     pauseRunnable = () -> {
                         pauseCurrentMedia();
@@ -196,10 +208,12 @@ public class MainActivity extends Activity {
                         pauseRunnable = null;
                     };
                     handler.postDelayed(pauseRunnable, seconds * 1000L);
+                    bringNerdioToFront();
                     return;
                 }
 
                 if (SystemClock.uptimeMillis() - playbackLaunchUptime >= PLAYBACK_START_TIMEOUT_MS) {
+                    returnRunnable = null;
                     bringNerdioToFront();
                     releaseWakeLock();
                     notifyNativeError("Amazon Music hat die Wiedergabe nicht gestartet. Bitte erneut versuchen.");
@@ -213,18 +227,72 @@ public class MainActivity extends Activity {
     }
 
     private void bringNerdioToFront() {
+        returningToNerdio = true;
+        foregroundAttempts = 0;
+        attemptBringNerdioToFront();
+    }
+
+    private void attemptBringNerdioToFront() {
+        if (!returningToNerdio || isFinishing() || isDestroyed()) return;
+
         try {
             ActivityManager manager = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
-            manager.moveTaskToFront(getTaskId(), ActivityManager.MOVE_TASK_WITH_HOME);
-        } catch (Exception ex) {
-            try {
-                Intent self = new Intent(this, MainActivity.class);
-                self.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                startActivity(self);
-            } catch (Exception ignored) {
+            boolean moved = false;
+            for (ActivityManager.AppTask appTask : manager.getAppTasks()) {
+                try {
+                    if (appTask.getTaskInfo().taskId == getTaskId()) {
+                        appTask.moveToFront();
+                        moved = true;
+                        break;
+                    }
+                } catch (Exception ignored) {
+                }
             }
+            if (!moved) {
+                manager.moveTaskToFront(
+                        getTaskId(),
+                        ActivityManager.MOVE_TASK_WITH_HOME | ActivityManager.MOVE_TASK_NO_USER_ACTION);
+            }
+        } catch (Exception ignored) {
         }
-        returnRunnable = null;
+
+        try {
+            Intent self = new Intent(this, MainActivity.class);
+            self.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                    | Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    | Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(self);
+            overridePendingTransition(0, 0);
+        } catch (Exception ignored) {
+        }
+
+        foregroundAttempts += 1;
+        if (hasWindowFocus()) {
+            schedulePlaybackCoverRelease();
+            return;
+        }
+
+        if (foregroundAttempts < FOREGROUND_MAX_ATTEMPTS) {
+            if (foregroundRetryRunnable != null) handler.removeCallbacks(foregroundRetryRunnable);
+            foregroundRetryRunnable = this::attemptBringNerdioToFront;
+            handler.postDelayed(foregroundRetryRunnable, FOREGROUND_RETRY_MS);
+        }
+    }
+
+    private void schedulePlaybackCoverRelease() {
+        if (!returningToNerdio || !playbackCoverAttached || !hasWindowFocus()) return;
+        if (coverReleaseRunnable != null) handler.removeCallbacks(coverReleaseRunnable);
+        coverReleaseRunnable = () -> {
+            coverReleaseRunnable = null;
+            if (!returningToNerdio || !hasWindowFocus()) return;
+            returningToNerdio = false;
+            if (foregroundRetryRunnable != null) {
+                handler.removeCallbacks(foregroundRetryRunnable);
+                foregroundRetryRunnable = null;
+            }
+            detachPlaybackCover();
+        };
+        handler.postDelayed(coverReleaseRunnable, COVER_RELEASE_DELAY_MS);
     }
 
     private void requestOverlayPermission() {
@@ -241,8 +309,11 @@ public class MainActivity extends Activity {
         }
     }
 
-    private boolean attachPlaybackCover() {
-        if (playbackCoverAttached) return true;
+    private boolean attachPlaybackCover(Runnable onFirstDraw) {
+        if (playbackCoverAttached) {
+            if (onFirstDraw != null) handler.post(onFirstDraw);
+            return true;
+        }
         if (!Settings.canDrawOverlays(this)) return false;
 
         try {
@@ -251,6 +322,7 @@ public class MainActivity extends Activity {
 
             FrameLayout cover = new FrameLayout(getApplicationContext());
             cover.setBackgroundColor(Color.rgb(9, 11, 22));
+            cover.setAlpha(1f);
 
             WindowManager.LayoutParams params = new WindowManager.LayoutParams(
                     WindowManager.LayoutParams.MATCH_PARENT,
@@ -262,6 +334,19 @@ public class MainActivity extends Activity {
                     PixelFormat.OPAQUE);
             params.gravity = Gravity.TOP | Gravity.START;
             params.setTitle("Nerdio playback cover");
+
+            final ViewTreeObserver.OnDrawListener[] drawListener =
+                    new ViewTreeObserver.OnDrawListener[1];
+            drawListener[0] = () -> cover.post(() -> {
+                ViewTreeObserver observer = cover.getViewTreeObserver();
+                if (observer.isAlive()) {
+                    observer.removeOnDrawListener(drawListener[0]);
+                }
+                if (playbackCoverAttached && playbackCover == cover && onFirstDraw != null) {
+                    onFirstDraw.run();
+                }
+            });
+            cover.getViewTreeObserver().addOnDrawListener(drawListener[0]);
 
             overlayWindowManager.addView(cover, params);
             playbackCover = cover;
@@ -315,6 +400,16 @@ public class MainActivity extends Activity {
             handler.removeCallbacks(returnRunnable);
             returnRunnable = null;
         }
+        if (foregroundRetryRunnable != null) {
+            handler.removeCallbacks(foregroundRetryRunnable);
+            foregroundRetryRunnable = null;
+        }
+        if (coverReleaseRunnable != null) {
+            handler.removeCallbacks(coverReleaseRunnable);
+            coverReleaseRunnable = null;
+        }
+        returningToNerdio = false;
+        foregroundAttempts = 0;
         if (releaseLock) releaseWakeLock();
     }
 
@@ -368,8 +463,28 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        if (playbackCoverAttached) {
-            detachPlaybackCover();
+        if (returningToNerdio && playbackCoverAttached && hasWindowFocus()) {
+            schedulePlaybackCoverRelease();
+        }
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) {
+            if (returningToNerdio && playbackCoverAttached) {
+                schedulePlaybackCoverRelease();
+            }
+        } else if (returningToNerdio) {
+            if (coverReleaseRunnable != null) {
+                handler.removeCallbacks(coverReleaseRunnable);
+                coverReleaseRunnable = null;
+            }
+            if (foregroundAttempts < FOREGROUND_MAX_ATTEMPTS) {
+                if (foregroundRetryRunnable != null) handler.removeCallbacks(foregroundRetryRunnable);
+                foregroundRetryRunnable = this::attemptBringNerdioToFront;
+                handler.postDelayed(foregroundRetryRunnable, FOREGROUND_RETRY_MS);
+            }
         }
     }
 
