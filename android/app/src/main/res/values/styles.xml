@@ -10,4 +10,5 @@
         <item name="android:windowLightNavigationBar">false</item>
         <item name="android:windowBackground">#090B16</item>
     </style>
+    <string name="accessibility_service_description">Blendet Amazon Music beim Start eines Nerdio-Songs aus. Es werden keine Bildschirminhalte gelesen.</string>
 </resources>
