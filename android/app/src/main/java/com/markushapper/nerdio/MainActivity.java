@@ -35,17 +35,21 @@ public class MainActivity extends Activity {
     private static final String APP_PATH = "/nerdio/";
     private static final String AMAZON_PACKAGE = "com.amazon.mp3";
     private static final int FILE_CHOOSER_REQUEST = 7001;
-    private static final long AMAZON_HANDOFF_MS = 700L;
+    private static final long PLAYBACK_FIRST_CHECK_MS = 250L;
+    private static final long PLAYBACK_POLL_MS = 100L;
+    private static final long PLAYBACK_START_TIMEOUT_MS = 5000L;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private FrameLayout activityHost;
     private WebView webView;
     private WindowManager overlayWindowManager;
-    private boolean overlayAttached = false;
+    private View playbackCover;
+    private boolean playbackCoverAttached = false;
     private ValueCallback<Uri[]> filePathCallback;
     private Runnable pauseRunnable;
     private Runnable returnRunnable;
     private PowerManager.WakeLock wakeLock;
+    private long playbackLaunchUptime;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -154,12 +158,12 @@ public class MainActivity extends Activity {
         }
 
         cancelScheduledPlayback(false);
-        if (!attachNerdioOverlay()) {
-            notifyNativeError("Nerdio-Overlay konnte nicht gestartet werden.");
+        if (!attachPlaybackCover()) {
+            notifyNativeError("Nerdio-Sichtschutz konnte nicht gestartet werden.");
             return;
         }
 
-        acquireWakeLock((seconds * 1000L) + AMAZON_HANDOFF_MS + 5000L);
+        acquireWakeLock((seconds * 1000L) + PLAYBACK_START_TIMEOUT_MS + 5000L);
 
         Intent amazon = new Intent(Intent.ACTION_VIEW, uri);
         amazon.setPackage(AMAZON_PACKAGE);
@@ -171,24 +175,41 @@ public class MainActivity extends Activity {
                 startActivity(fallback);
             } catch (ActivityNotFoundException ignored) {
                 releaseWakeLock();
+                detachPlaybackCover();
                 notifyNativeError("Amazon Music konnte nicht geöffnet werden");
                 return;
             }
         }
 
-        returnRunnable = () -> {
-            bringNerdioToFront();
-            notifyPlaybackStarted(seconds);
-        };
-        handler.postDelayed(returnRunnable, AMAZON_HANDOFF_MS);
+        playbackLaunchUptime = SystemClock.uptimeMillis();
+        returnRunnable = new Runnable() {
+            @Override
+            public void run() {
+                AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+                if (audioManager != null && audioManager.isMusicActive()) {
+                    bringNerdioToFront();
+                    notifyPlaybackStarted(seconds);
+                    pauseRunnable = () -> {
+                        pauseCurrentMedia();
+                        notifyPlaybackPaused();
+                        releaseWakeLock();
+                        pauseRunnable = null;
+                    };
+                    handler.postDelayed(pauseRunnable, seconds * 1000L);
+                    return;
+                }
 
-        pauseRunnable = () -> {
-            pauseCurrentMedia();
-            notifyPlaybackPaused();
-            releaseWakeLock();
-            pauseRunnable = null;
+                if (SystemClock.uptimeMillis() - playbackLaunchUptime >= PLAYBACK_START_TIMEOUT_MS) {
+                    bringNerdioToFront();
+                    releaseWakeLock();
+                    notifyNativeError("Amazon Music hat die Wiedergabe nicht gestartet. Bitte erneut versuchen.");
+                    return;
+                }
+
+                handler.postDelayed(this, PLAYBACK_POLL_MS);
+            }
         };
-        handler.postDelayed(pauseRunnable, AMAZON_HANDOFF_MS + seconds * 1000L);
+        handler.postDelayed(returnRunnable, PLAYBACK_FIRST_CHECK_MS);
     }
 
     private void bringNerdioToFront() {
@@ -220,64 +241,51 @@ public class MainActivity extends Activity {
         }
     }
 
-    private boolean attachNerdioOverlay() {
-        if (overlayAttached) return true;
+    private boolean attachPlaybackCover() {
+        if (playbackCoverAttached) return true;
         if (!Settings.canDrawOverlays(this)) return false;
 
         try {
-            ViewGroup parent = (ViewGroup) webView.getParent();
-            if (parent != null) parent.removeView(webView);
-
             overlayWindowManager = (WindowManager) getApplicationContext()
                     .getSystemService(Context.WINDOW_SERVICE);
+
+            FrameLayout cover = new FrameLayout(getApplicationContext());
+            cover.setBackgroundColor(Color.rgb(9, 11, 22));
 
             WindowManager.LayoutParams params = new WindowManager.LayoutParams(
                     WindowManager.LayoutParams.MATCH_PARENT,
                     WindowManager.LayoutParams.MATCH_PARENT,
                     WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                            | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                            | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
                     PixelFormat.OPAQUE);
             params.gravity = Gravity.TOP | Gravity.START;
-            params.setTitle("Nerdio");
+            params.setTitle("Nerdio playback cover");
 
-            overlayWindowManager.addView(webView, params);
-            overlayAttached = true;
+            overlayWindowManager.addView(cover, params);
+            playbackCover = cover;
+            playbackCoverAttached = true;
             return true;
         } catch (Exception ex) {
-            overlayAttached = false;
-            try {
-                if (webView.getParent() == null) {
-                    activityHost.addView(webView, new FrameLayout.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT,
-                            ViewGroup.LayoutParams.MATCH_PARENT));
-                }
-            } catch (Exception ignored) {
-            }
+            playbackCover = null;
+            playbackCoverAttached = false;
+            overlayWindowManager = null;
             return false;
         }
     }
 
-    private void detachNerdioOverlay() {
-        if (!overlayAttached) return;
+    private void detachPlaybackCover() {
+        if (!playbackCoverAttached) return;
         try {
-            if (overlayWindowManager != null) {
-                overlayWindowManager.removeViewImmediate(webView);
+            if (overlayWindowManager != null && playbackCover != null) {
+                overlayWindowManager.removeViewImmediate(playbackCover);
             }
         } catch (Exception ignored) {
         }
-        overlayAttached = false;
+        playbackCover = null;
+        playbackCoverAttached = false;
         overlayWindowManager = null;
-
-        try {
-            ViewGroup parent = (ViewGroup) webView.getParent();
-            if (parent != null) parent.removeView(webView);
-            if (webView.getParent() == null) {
-                activityHost.addView(webView, new FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT));
-            }
-        } catch (Exception ignored) {
-        }
     }
 
     private void pauseCurrentMedia() {
@@ -360,23 +368,19 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        if (overlayAttached) {
-            detachNerdioOverlay();
+        if (playbackCoverAttached) {
+            detachPlaybackCover();
         }
     }
 
     @Override
     protected void onSaveInstanceState(Bundle outState) {
-        if (!overlayAttached) webView.saveState(outState);
+        webView.saveState(outState);
         super.onSaveInstanceState(outState);
     }
 
     @Override
     public void onBackPressed() {
-        if (overlayAttached) {
-            if (webView.canGoBack()) webView.goBack();
-            return;
-        }
         if (webView.canGoBack()) webView.goBack();
         else super.onBackPressed();
     }
@@ -384,7 +388,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         cancelScheduledPlayback(true);
-        detachNerdioOverlay();
+        detachPlaybackCover();
         if (webView != null) webView.destroy();
         super.onDestroy();
     }
