@@ -11,8 +11,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-SCHEMA_VERSION = "1.4"
-VALIDATOR_VERSION = "1.4"
+SCHEMA_VERSION = "1.5"
+VALIDATOR_VERSION = "1.5"
 STATUS_NOT_READY = "NOT_READY"
 STATUS_READY = "READY"
 MIN_PACK_SONGS = 20
@@ -22,11 +22,12 @@ MAX_YEAR = 2100
 AMAZON_ID_RE = re.compile(r"^[A-Z0-9]{10}$")
 AMAZON_ID_LOOSE_RE = re.compile(r"^[A-Za-z0-9]{10}$")
 AMAZON_ALBUM_PATH_RE = re.compile(r"^/albums/([A-Za-z0-9]{10})/?$")
+AMAZON_TRACK_PATH_RE = re.compile(r"^/tracks/([A-Za-z0-9]{10})/?$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 TOP_REQUIRED = (
     "schema_version", "pack_id", "playlist_url", "playlist_name", "created_at",
-    "validated_song_count", "status", "validation", "songs",
+    "playlist_song_count", "validated_song_count", "status", "validation", "songs",
 )
 TOP_ALLOWED = set(TOP_REQUIRED)
 SONG_REQUIRED = (
@@ -61,36 +62,49 @@ def songs_hash(songs: Any) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-def canonical_url(album_asin: str, track_asin: str) -> str:
-    return f"https://music.amazon.de/albums/{album_asin}?trackAsin={track_asin}&do=play"
+def canonical_url(track_asin: str) -> str:
+    """Build the user-tested direct-track autoplay URL (no album context)."""
+    return f"https://music.amazon.de/tracks/{track_asin}?do=play"
 
 
 def parse_amazon_play_url(url: Any) -> tuple[str | None, str | None, str | None]:
-    """Return (canonical_url, album_asin, track_asin) or (None, None, None)."""
+    """Return (canonical_direct_track_url, optional_legacy_album_asin, track_asin).
+
+    Accept direct-track URLs and legacy album URLs as *input*. Check-only
+    validation requires the direct-track canonical output, never a legacy URL.
+    """
     if not nonempty(url):
         return None, None, None
     try:
         parsed = urlparse(url.strip())
     except Exception:
         return None, None, None
-    if parsed.scheme.lower() != "https" or parsed.hostname != "music.amazon.de":
+    if parsed.scheme != "https" or parsed.netloc != "music.amazon.de":
         return None, None, None
-    match = AMAZON_ALBUM_PATH_RE.fullmatch(parsed.path)
-    if not match:
-        return None, None, None
-    album_asin = match.group(1).upper()
+
     query = parse_qs(parsed.query, keep_blank_values=True)
+    track_match = AMAZON_TRACK_PATH_RE.fullmatch(parsed.path)
+    if track_match:
+        track_asin = track_match.group(1).upper()
+        query_track = query.get("trackAsin")
+        if query_track and (len(query_track) != 1 or query_track[0].strip().upper() != track_asin):
+            return None, None, None
+        return canonical_url(track_asin), None, track_asin
+
+    album_match = AMAZON_ALBUM_PATH_RE.fullmatch(parsed.path)
+    if not album_match:
+        return None, None, None
     track_values = query.get("trackAsin")
     if not track_values or len(track_values) != 1:
         return None, None, None
     track_asin = track_values[0].strip().upper()
     if not AMAZON_ID_LOOSE_RE.fullmatch(track_asin):
         return None, None, None
-    return canonical_url(album_asin, track_asin), album_asin, track_asin
+    return canonical_url(track_asin), album_match.group(1).upper(), track_asin
 
 
 def normalize_pack_urls(pack: Any) -> None:
-    """Normalize structurally usable Amazon links before normal validation."""
+    """Canonicalize URLs; derive missing URLs solely from verified playlist track ASINs."""
     if not isinstance(pack, dict):
         return
     songs = pack.get("songs")
@@ -99,9 +113,14 @@ def normalize_pack_urls(pack: Any) -> None:
     for song in songs:
         if not isinstance(song, dict):
             continue
-        canonical, _, _ = parse_amazon_play_url(song.get("amazon_play_url"))
+        source_url = song.get("amazon_play_url")
+        canonical, _, _ = parse_amazon_play_url(source_url)
         if canonical:
             song["amazon_play_url"] = canonical
+        elif not nonempty(source_url):
+            track_asin = song.get("amazon_track_asin")
+            if isinstance(track_asin, str) and AMAZON_ID_LOOSE_RE.fullmatch(track_asin.strip()):
+                song["amazon_play_url"] = canonical_url(track_asin.strip().upper())
 
 
 def validate_pack(pack: Any, check_only: bool = False) -> list[str]:
@@ -127,6 +146,10 @@ def validate_pack(pack: Any, check_only: bool = False) -> list[str]:
         e.append("playlist_name must be a non-empty string.")
     if not valid_datetime(pack.get("created_at")):
         e.append("created_at must be an ISO-8601 date-time with timezone.")
+
+    playlist_count = pack.get("playlist_song_count")
+    if not isinstance(playlist_count, int) or isinstance(playlist_count, bool) or playlist_count < 0:
+        e.append("playlist_song_count must be a non-negative integer sourced from the complete playlist.")
 
     count = pack.get("validated_song_count")
     if not isinstance(count, int) or isinstance(count, bool) or count < 0:
@@ -164,6 +187,11 @@ def validate_pack(pack: Any, check_only: bool = False) -> list[str]:
         e.append(f"Pool too small: {len(songs)} songs present, at least {MIN_PACK_SONGS} required.")
     if isinstance(count, int) and not isinstance(count, bool) and count != len(songs):
         e.append(f"validated_song_count is {count}, but songs contains {len(songs)} entries.")
+    if isinstance(playlist_count, int) and not isinstance(playlist_count, bool) and playlist_count != len(songs):
+        e.append(
+            f"Playlist incomplete: playlist_song_count is {playlist_count}, "
+            f"but songs contains only {len(songs)} entries. No partial READY pack."
+        )
 
     seen_ids: dict[str, int] = {}
     seen_asins: dict[str, int] = {}
@@ -191,12 +219,12 @@ def validate_pack(pack: Any, check_only: bool = False) -> list[str]:
             e.append(f"{prefix}.scoring_year must be an integer between {MIN_YEAR} and {MAX_YEAR}.")
 
         url = song.get("amazon_play_url")
-        canonical, url_album_asin, url_track_asin = parse_amazon_play_url(url)
+        canonical, _, url_track_asin = parse_amazon_play_url(url)
         if nonempty(url):
             if not canonical:
                 e.append(
-                    f"{prefix}.amazon_play_url must be an Amazon Music Germany album URL "
-                    "with a valid trackAsin."
+                    f"{prefix}.amazon_play_url must identify a valid Amazon Music DE track "
+                    "(direct /tracks/<ASIN> or legacy album URL with trackAsin)."
                 )
             elif url != canonical:
                 e.append(
@@ -227,23 +255,21 @@ def validate_pack(pack: Any, check_only: bool = False) -> list[str]:
             else:
                 seen_ids[song_id] = i
 
-        if nonempty(track_asin):
-            if track_asin in seen_asins:
+        # Detect duplicates even when optional amazon_track_asin metadata is absent.
+        identity_asin = url_track_asin or (track_asin if nonempty(track_asin) else None)
+        if identity_asin:
+            if identity_asin in seen_asins:
                 e.append(
-                    f"Duplicate Amazon track ASIN {track_asin!r} at songs[{i}] and songs[{seen_asins[track_asin]}]."
+                    f"Duplicate Amazon track ASIN {identity_asin!r} at songs[{i}] and songs[{seen_asins[identity_asin]}]."
                 )
             else:
-                seen_asins[track_asin] = i
+                seen_asins[identity_asin] = i
 
-        if canonical:
-            if nonempty(album_id) and album_id != url_album_asin:
-                e.append(
-                    f"{prefix}.amazon_album_id does not match amazon_play_url album ASIN {url_album_asin}."
-                )
-            if nonempty(track_asin) and track_asin != url_track_asin:
-                e.append(
-                    f"{prefix}.amazon_track_asin does not match amazon_play_url trackAsin {url_track_asin}."
-                )
+        # Album ID is informational metadata only, never required for direct playback.
+        if canonical and nonempty(track_asin) and track_asin != url_track_asin:
+            e.append(
+                f"{prefix}.amazon_track_asin does not match amazon_play_url track ASIN {url_track_asin}."
+            )
 
     if check_only and isinstance(val, dict):
         digest = val.get("songs_sha256")
@@ -288,6 +314,7 @@ def main(argv=None) -> int:
         print("NERDIO PACK READY")
         print(f"Playlist: {pack['playlist_name']}")
         print(f"Pack ID: {pack['pack_id']}")
+        print(f"Playlist-Songs: {pack['playlist_song_count']}")
         print(f"OK-Songs: {len(pack['songs'])}")
         print("Validierung: PASSED")
         print("Modus: CHECK-ONLY")
@@ -305,6 +332,7 @@ def main(argv=None) -> int:
     print("NERDIO PACK READY")
     print(f"Playlist: {pack['playlist_name']}")
     print(f"Pack ID: {pack['pack_id']}")
+    print(f"Playlist-Songs: {pack['playlist_song_count']}")
     print(f"OK-Songs: {len(pack['songs'])}")
     print("Validierung: PASSED")
     return 0
