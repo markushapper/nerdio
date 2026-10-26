@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://example.invalid/nerdio/gamepack-schema-1.4.json",
+  "$id": "https://example.invalid/nerdio/gamepack-schema-1.5.json",
   "title": "Nerdio Reusable Playlist Game Pack",
   "type": "object",
   "additionalProperties": false,
@@ -10,6 +10,7 @@
     "playlist_url",
     "playlist_name",
     "created_at",
+    "playlist_song_count",
     "validated_song_count",
     "status",
     "validation",
@@ -17,7 +18,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": "1.4"
+      "const": "1.5"
     },
     "pack_id": {
       "type": "string",
@@ -35,6 +36,10 @@
     "created_at": {
       "type": "string",
       "format": "date-time"
+    },
+    "playlist_song_count": {
+      "type": "integer",
+      "minimum": 0
     },
     "validated_song_count": {
       "type": "integer",
@@ -116,7 +121,7 @@
         "amazon_play_url": {
           "type": "string",
           "minLength": 1,
-          "pattern": "^https://music\\.amazon\\.de/albums/[A-Z0-9]{10}\\?trackAsin=[A-Z0-9]{10}&do=play$"
+          "pattern": "^https://music\\.amazon\\.de/tracks/[A-Z0-9]{10}\\?do=play$"
         },
         "verification_status": {
           "const": "OK"
