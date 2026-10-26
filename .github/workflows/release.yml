@@ -1,0 +1,117 @@
+name: Release Nerdio
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate version tag
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Expected tag format vMAJOR.MINOR.PATCH, got: $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+          VERSION_CODE=$((MAJOR * 1000000 + MINOR * 1000 + PATCH))
+          echo "NERDIO_VERSION_NAME=$VERSION" >> "$GITHUB_ENV"
+          echo "NERDIO_VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
+          echo "RELEASE_APK=nerdio-$GITHUB_REF_NAME.apk" >> "$GITHUB_ENV"
+
+      - name: Run pack builder tests
+        run: python3 -m unittest discover -s skills/nerdio-pack-builder/tests -p 'test_*.py' -v
+
+      - name: Verify required skill files
+        run: |
+          test -f skills/nerdio-pack-builder/SKILL.md
+          test -f skills/nerdio-pack-builder/agents/openai.yaml
+          test -f skills/nerdio-pack-builder/scripts/validate_pack.py
+          test -f skills/nerdio-pack-builder/references/gamepack-schema.json
+
+      - name: Build clean skill.zip
+        run: |
+          rm -rf dist
+          mkdir -p dist/stage/nerdio-pack-builder
+          cp skills/nerdio-pack-builder/SKILL.md dist/stage/nerdio-pack-builder/
+          cp -R skills/nerdio-pack-builder/agents dist/stage/nerdio-pack-builder/
+          cp -R skills/nerdio-pack-builder/assets dist/stage/nerdio-pack-builder/
+          cp -R skills/nerdio-pack-builder/references dist/stage/nerdio-pack-builder/
+          cp -R skills/nerdio-pack-builder/scripts dist/stage/nerdio-pack-builder/
+          cp -R skills/nerdio-pack-builder/tests dist/stage/nerdio-pack-builder/
+          find dist/stage -type d -name '__pycache__' -prune -exec rm -rf {} +
+          find dist/stage -type f -name '*.pyc' -delete
+          cd dist/stage
+          zip -r ../skill.zip nerdio-pack-builder
+
+      - name: Verify exact skill install package
+        run: |
+          unzip -t dist/skill.zip
+          test "$(unzip -Z1 dist/skill.zip | grep -c '/SKILL.md$')" -eq 1
+          unzip -l dist/skill.zip | grep -F 'nerdio-pack-builder/SKILL.md'
+          unzip -l dist/skill.zip | grep -F 'nerdio-pack-builder/agents/openai.yaml'
+          unzip -l dist/skill.zip | grep -F 'nerdio-pack-builder/tests/test_validate_pack.py'
+          test "$(stat -c%s dist/skill.zip)" -le 26214400
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Android SDK packages
+        env:
+          SDKMANAGER: /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager
+        run: |
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Build unsigned release APK
+        working-directory: android
+        run: gradle :app:assembleRelease --no-daemon
+
+      - name: Restore release keystore
+        env:
+          NERDIO_ANDROID_KEYSTORE_BASE64: ${{ secrets.NERDIO_ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$NERDIO_ANDROID_KEYSTORE_BASE64"
+          printf '%s' "$NERDIO_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/nerdio-release.jks"
+
+      - name: Sign release APK
+        env:
+          NERDIO_ANDROID_KEY_ALIAS: ${{ secrets.NERDIO_ANDROID_KEY_ALIAS }}
+          NERDIO_ANDROID_KEY_PASSWORD: ${{ secrets.NERDIO_ANDROID_KEY_PASSWORD }}
+          NERDIO_ANDROID_STORE_PASSWORD: ${{ secrets.NERDIO_ANDROID_STORE_PASSWORD }}
+        run: |
+          test -n "$NERDIO_ANDROID_KEY_ALIAS"
+          test -n "$NERDIO_ANDROID_KEY_PASSWORD"
+          test -n "$NERDIO_ANDROID_STORE_PASSWORD"
+          UNSIGNED_APK="android/app/build/outputs/apk/release/app-release-unsigned.apk"
+          test -f "$UNSIGNED_APK"
+          /usr/local/lib/android/sdk/build-tools/35.0.0/apksigner sign             --ks "$RUNNER_TEMP/nerdio-release.jks"             --ks-key-alias "$NERDIO_ANDROID_KEY_ALIAS"             --ks-pass "pass:$NERDIO_ANDROID_STORE_PASSWORD"             --key-pass "pass:$NERDIO_ANDROID_KEY_PASSWORD"             --out "dist/$RELEASE_APK"             "$UNSIGNED_APK"
+
+      - name: Verify signed APK
+        run: |
+          /usr/local/lib/android/sdk/build-tools/35.0.0/apksigner verify --verbose --print-certs "dist/$RELEASE_APK"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME"             "dist/$RELEASE_APK"             "dist/skill.zip"             --target "$GITHUB_SHA"             --title "Nerdio $GITHUB_REF_NAME"             --generate-notes             --latest
