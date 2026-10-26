@@ -164,6 +164,9 @@
   function openPack(pack) {
     currentPack = pack;
     currentProgress = getProgress(pack);
+    if (window.NerdioNative && typeof window.NerdioNative.setKeepScreenOn === 'function') {
+      window.NerdioNative.setKeepScreenOn(true);
+    }
     showScreen('play');
     renderRound();
   }
@@ -276,7 +279,15 @@
     if (savedTimer && [...els.timerSeconds.options].some(o => o.value === savedTimer)) els.timerSeconds.value = savedTimer;
     els.timerSeconds.addEventListener('change', () => localStorage.setItem('nerdio-timer-seconds', els.timerSeconds.value));
   }
-  els.backButton.addEventListener('click', () => { currentPack = null; currentProgress = null; showScreen('library'); renderLibrary(); });
+  els.backButton.addEventListener('click', () => {
+    if (window.NerdioNative && typeof window.NerdioNative.setKeepScreenOn === 'function') {
+      window.NerdioNative.setKeepScreenOn(false);
+    }
+    currentPack = null;
+    currentProgress = null;
+    showScreen('library');
+    renderLibrary();
+  });
   els.revealButton.addEventListener('click', reveal);
   els.nextButton.addEventListener('click', () => nextSong(false));
   els.skipButton.addEventListener('click', () => nextSong(true));
