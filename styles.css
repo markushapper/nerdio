@@ -73,15 +73,6 @@ body.native-mode .native-only { display: flex !important; }
 .song-card h2 { margin: 10px 0 6px; font-size: clamp(2rem, 8vw, 3rem); line-height: 1.02; }
 .artist { font-size: 1.22rem; margin: 0; color: #d4d7e3; }
 .year { font-size: clamp(4rem, 20vw, 7rem); line-height: .95; font-weight: 950; letter-spacing: -.05em; color: var(--brand); text-shadow: 0 0 24px rgba(239,255,41,.24); margin: 22px 0 30px; }
-.legend-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
-.legend-pill { min-height: 58px; border-radius: 16px; display: flex; align-items: center; justify-content: center; gap: 9px; padding: 10px; font-weight: 800; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08); text-align: center; }
-.legend-points { width: 28px; height: 28px; border-radius: 999px; display: inline-grid; place-items: center; font-size: .92rem; font-weight: 900; color: #09111b; }
-.decade { color: #bfe5ff; border-color: rgba(53,168,255,.45); }
-.decade .legend-points { background: var(--blue); }
-.artist-pill { color: #e2c3ff; border-color: rgba(161,60,255,.45); }
-.artist-pill .legend-points { background: var(--violet); }
-.title-pill { color: #ffd2dc; border-color: rgba(255,97,124,.45); }
-.title-pill .legend-points { background: var(--coral); }
 .message { min-height: 22px; color: #d6d9e4; text-align: center; font-size: .93rem; margin-top: 12px; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 dialog { border: 0; border-radius: 22px; padding: 0; color: #fff; background: #0d1325; width: min(calc(100% - 36px), 420px); box-shadow: var(--shadow); }
@@ -97,5 +88,4 @@ dialog::backdrop { background: rgba(0,0,0,.72); }
   .pack-actions { grid-template-columns: 1fr 44px 44px; }
   .record-wrap { grid-template-columns: 1fr; }
   .wave { display: none; }
-  .legend-row { grid-template-columns: 1fr; }
 }
