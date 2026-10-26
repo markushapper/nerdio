@@ -217,7 +217,7 @@
         stopCountdown('Startet …');
         const seconds = Number(els.timerSeconds?.value || localStorage.getItem('nerdio-timer-seconds') || 10);
         localStorage.setItem('nerdio-timer-seconds', String(seconds));
-        window.NerdioNative.playSong(playUrl, seconds);
+        window.NerdioNative.playSong(playUrl, seconds, song.title, song.artist);
       };
     } else {
       els.playLink.onclick = null;
