@@ -1,4 +1,4 @@
-const CACHE = 'nerdio-v7-accessibility-cover';
+const CACHE = 'nerdio-v8-keep-screen-on';
 const ASSETS = [
   './', './index.html', './styles.css', './game-core.js', './app.js',
   './manifest.webmanifest', './packs/halloween.json', './icons/icon.svg'
