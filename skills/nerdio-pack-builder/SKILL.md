@@ -1,157 +1,63 @@
 ---
 name: nerdio-pack-builder
-description: Build a reusable READY Nerdio game pack from one public Amazon Music Germany playlist and persist it in connected Google Drive. Use when the user wants to create or refresh a Nerdio music pack from an Amazon Music DE playlist URL. Preserve playlist playback identity, use MusicBrainz primarily for scoring years, canonicalize every Amazon play URL to an autoplay-safe album link with trackAsin and do=play, validate the pack deterministically, persist a real application/json Drive file (not a Google Doc), verify its raw bytes, and never run gameplay.
+description: Build complete reusable Nerdio gamepacks from Amazon Music Germany playlists, including saved HTML/MHTML snapshots when the public page is inaccessible. Use playlist track ASINs to create direct autoplay links without album IDs, verify original recording years with MusicBrainz, enforce full playlist coverage with the deterministic validator, and store the exact READY JSON bytes in Google Drive. Do not start gameplay.
 ---
 
 # Nerdio Pack Builder
 
-Build one reusable `gamepack.json` from a public Amazon Music Germany playlist. Do not conduct gameplay.
+Create one reusable `gamepack.json` for an Amazon Music DE playlist. **Do not start gameplay.**
 
-## Core principle
+## Mandatory operating principles
 
-- **Read Amazon once at playlist level.** Treat the playlist entry as the playback identity and keep any title, artist, direct play URL, track URL, ASIN, album ID, album, version, or duration exposed by the playlist response.
-- **Do not open individual Amazon track or album pages in the normal path.** Per-track Amazon lookup is fallback-only when the playlist entry does not expose a usable play URL.
-- **MusicBrainz supplies chronology.** For ordinary songs, search title + main artist and use the earliest official release year of the clearly matching recording.
-- **The validator owns final playback-link normalization.** The normal validation pass rewrites any usable Amazon Music DE album link into the canonical Nerdio form `https://music.amazon.de/albums/<ALBUM_ASIN>?trackAsin=<TRACK_ASIN>&do=play`. The final Drive copy must pass strict check-only validation without modification.
-- **Deliver an actual JSON file.** A native Google Doc named `gamepack.json` is not an importable gamepack. Google Drive must store the output as a raw file with MIME type `application/json`; verify the MIME type and read back raw bytes before reporting success.
-- Escalate only for real version ambiguity such as live, remix, re-recording, acoustic, demo, edit, or cover conflicts.
+1. **The playlist is the source of playback identity.** Read the complete playlist, retaining each track's title, displayed artist, 10-character Amazon track ASIN, position, and any already exposed version/duration metadata. A public playlist URL is the only required user input. A user-provided saved HTML/MHTML playlist snapshot is an accepted fallback when Amazon does not expose the list to the tool. Do not mistake a redirect to Amazon's home page for an empty playlist.
+2. **Track ASIN is sufficient for the playback URL.** No album ASIN, album page, or per-song Amazon lookup is needed when the playlist supplies the track ASIN. The direct-track autoplay format was tested successfully by the user for multiple tracks in Amazon Music DE. This is evidence of their playback environment, not proof that every link plays in every environment.
+3. **MusicBrainz supplies the scoring year.** Match normalized title + main artist to the correct recording and use the earliest official release year of that recording. A later remaster, reissue, or compilation does not change the recording year. Escalate only genuine live/remix/re-recording/acoustic/demo/cover/edit/version conflicts.
+4. **Completeness comes before READY.** Record the actual complete playlist size in `playlist_song_count`. A 50-song playlist with only 20 validated songs must be `NOT_READY`, not a successful pack. Keep a separate report of unresolved songs and reasons; do not silently omit them or insert unverified entries.
+5. **The validator owns final URL normalization and READY.** Build schema `1.5` with `status = "NOT_READY"`, run normal validation, then run `--check-only`. Only the validator may mark a pack READY. URL syntax checks do not prove a song was actually streamed.
+6. **Drive handoff is verified from raw bytes.** Store a real `application/json` file (never a Google Doc) and require Drive metadata, raw download, strict validation, and byte-for-byte identity before reporting `Drive: PASSED`.
 
-Read `references/verification-policy.md` before researching tracks.
-
-## Hard boundaries
-
-- Accept exactly one required user input: public Amazon Music DE playlist URL.
-- Never ask for player count or target score.
-- Inspect the whole playlist when practical; do not stop at 20 merely because the minimum is met.
-- Require at least 20 final `OK` songs before a pack may become `READY`.
-- Never invent titles, artists, play URLs, IDs, versions, durations, MusicBrainz IDs, ISRCs, or years.
-- Never use Amazon album/reissue dates as `scoring_year` merely because they are available.
-- Never use Amazon per-track pages to prove chronology.
-- Never include `PRUEFEN` or `AUSSCHLIESSEN` candidates in the final `songs` array.
-- Write `status = "NOT_READY"` before validation. Only `scripts/validate_pack.py` may set `READY`.
-- Never hand-edit the final `amazon_play_url` after validation.
-- Never start the game, assign start years, shuffle songs, or reveal links as gameplay.
-- Never use `import_document` or create a Google Doc as the final `gamepack.json`. Filename and JSON-looking text do not make a Google Doc a JSON file.
-- Never claim `Drive: PASSED` from upload acknowledgement, file title, or parsed Google Docs text alone. Require actual `application/json` metadata plus raw-byte readback and strict validation.
+Read `references/verification-policy.md` before researching songs.
 
 ## Workflow
 
-1. Parse the public Amazon Music DE playlist URL.
-2. Read the playlist track list in as few Amazon requests as practical. Extract all track-level data available directly from that playlist response.
-3. For each playlist track, require a real Amazon Music DE album playback URL containing a usable `trackAsin`. Reuse the direct URL already present in playlist data. It may omit `do=play` at this stage because the validator normalizes it.
-4. If a playlist entry has no usable play URL or no recoverable `trackAsin`, perform at most one focused Amazon fallback lookup for that track to recover a real play URL. If it still cannot be grounded, exclude that track and continue.
-5. Determine `scoring_year` with MusicBrainz:
-   - search normalized title + main artist;
-   - prefer the clearly matching recording;
-   - use the earliest official release year associated with that recording;
-   - when clear and no material version conflict exists, mark `OK` immediately.
-6. Escalate only for version exceptions. Use playlist title/version wording, MusicBrainz recording/release evidence, and optional playlist-supplied duration/album metadata. Use one additional reliable source only if still needed. If unresolved, exclude the song and continue.
-7. Apply year rules: remasters/reissues/compilations keep the underlying recording year; live recordings, re-recordings, remixes, covers, and materially distinct edits are separate recordings.
-8. Create a stable `pack_id` from the playlist identity and write schema version `1.4` using `references/gamepack-schema.json`.
-9. Required per-song fields are only: `song_id`, `title`, `artist`, `scoring_year`, `amazon_play_url`, `verification_status`, `verification_notes`. Album, version, duration, Amazon IDs, MusicBrainz ID, and ISRC are optional enrichment only when already known without extra Amazon browsing.
-10. Set `validated_song_count`, keep top-level `status = "NOT_READY"`, and run:
-   `python scripts/validate_pack.py gamepack.json`
-   This pass canonicalizes every usable Amazon playback URL and then writes `READY` plus validation metadata.
-11. Run a local strict verification pass:
-   `python scripts/validate_pack.py gamepack.json --check-only`
-   Do not persist a pack that fails this pass.
-12. Read `references/google-drive-handoff.md` and persist the **actual locally validated `gamepack.json` bytes** in connected Google Drive at `Nerdio/Gamepacks/<playlist_name>/gamepack.json`, using a raw file upload/update, not a native Google Doc.
-13. Read Drive file metadata after upload. Require name `gamepack.json` and MIME type exactly `application/json`; a Google Docs MIME type is a **hard failure**, regardless of its name.
-14. Download the **raw stored file bytes** into `drive-copy.json` (not the Google Doc text extraction). Run:
-   `python scripts/validate_pack.py drive-copy.json --check-only`
-15. Save Drive metadata as `drive-metadata.json` and run the stronger handoff check:
-   `python scripts/verify_drive_handoff.py --source gamepack.json --drive-copy drive-copy.json --metadata drive-metadata.json`
-   It checks actual MIME type, name, strict pack validity, and byte-for-byte equality with the validated local source.
-16. Report `Drive: PASSED` only when both checks exit 0. If raw upload or raw download is unavailable, report Drive handoff as **FAILED/UNVERIFIED**, supply the local validated `.json` download, and never substitute a Google Doc as a successful result.
+1. Parse the single Amazon Music DE playlist URL and obtain the entire playlist. If the live page is inaccessible, use a supplied HTML/MHTML snapshot; preserve the playlist URL/ID and extract the full song list and track ASINs from the snapshot. Confirm the actual source count before proceeding. Inspect the whole playlist, not just the first 20 results.
+2. For each entry, extract a real 10-character alphanumeric track ASIN from the playlist's track link, ID, or structured DOM data. Preserve the exact track identity and track order. **Never invent or substitute an ASIN based on a similar title.** If an entry lacks a track ASIN, perform at most one targeted Amazon fallback lookup for that entry. Otherwise avoid individual Amazon track/album pages.
+3. Set `amazon_track_asin` when known, and either set `amazon_play_url` to its direct-track link or let the normal validator derive it from the verified `amazon_track_asin`. No album ID or album URL is required. If an existing verified legacy album link is supplied, the validator converts it to a direct-track link.
+4. For every source song, obtain `scoring_year` using MusicBrainz recording/release chronology. In ordinary unambiguous cases accept a clear matching title and primary artist; do not mandate ISRC, exact album, duration equality, or a second source. Use optional version information to distinguish separate recordings; unresolved versions are **not OK**.
+5. Prepare `songs` with `song_id`, `title`, `artist`, `scoring_year`, `amazon_play_url` (or a grounded `amazon_track_asin` to generate it), `verification_status = "OK"`, and `verification_notes`. Keep optional album/version/duration/MusicBrainz/ISRC fields only when actually known. Do not fabricate metadata.
+6. Set `playlist_song_count` from the fully inspected source, `validated_song_count` to `len(songs)`, `schema_version = "1.5"`, stable `pack_id` from the playlist ID, and `status = "NOT_READY"`. For `validation` initially set `validator_version = "1.5"`, `validated_at = null`, `songs_sha256 = null`. Schema: `references/gamepack-schema.json`.
+7. If some playlist songs are missing from `songs`, report the exact count, positions, titles, and reasons as **NOT_READY**. Resolve remaining gaps instead of treating a 20-song minimum as permission to truncate. If the whole playlist has fewer than 20 songs, it cannot satisfy the standard gamepack minimum.
+8. Run `python scripts/validate_pack.py gamepack.json`. It canonicalizes the direct-track URLs, checks that `playlist_song_count == validated_song_count == len(songs)`, checks IDs/years/uniqueness, computes the hash, and sets READY only on success.
+9. Run `python scripts/validate_pack.py gamepack.json --check-only`. If this fails, do not publish the pack. Never hand-edit links or hashes after validation.
+10. Read `references/google-drive-handoff.md`. Upload the exact validated local JSON bytes to `Nerdio/Gamepacks/<playlist_name>/gamepack.json` with MIME `application/json`. Verify stored metadata, download original raw bytes, and run both:
+   - `python scripts/validate_pack.py drive-copy.json --check-only`
+   - `python scripts/verify_drive_handoff.py --source gamepack.json --drive-copy drive-copy.json --metadata drive-metadata.json`
+11. Only report `NERDIO PACK READY` and `Drive: PASSED` when all checks succeed. Otherwise distinguish local `READY` from a `FAILED/UNVERIFIED` Drive handoff, and provide the local validated `.json` download where possible.
 
-## Canonical Amazon playback URL
+## Canonical direct-track URL
 
-Every final song must use exactly:
+The **only** canonical final value for `amazon_play_url` is:
 
-`https://music.amazon.de/albums/<10-char album ASIN>?trackAsin=<10-char track ASIN>&do=play`
+`https://music.amazon.de/tracks/<TRACK_ASIN>?do=play`
 
-Rules:
+Example verified by the user: `https://music.amazon.de/tracks/B076DWYFTR?do=play`.
 
-- host must be `music.amazon.de`;
-- scheme must be `https`;
-- path must be `/albums/<ALBUM_ASIN>`;
-- `trackAsin` must be present and be 10 uppercase alphanumeric characters;
-- `do=play` must be present;
-- no unrelated query parameters may remain in the final validated link.
+- HTTPS, host exactly `music.amazon.de`, path `/tracks/` plus a 10-character uppercase alphanumeric ASIN, and query exactly `do=play`.
+- No album ASIN, `trackAsin` query parameter, or extraneous query parameter in the final URL.
+- In normal validation mode, legacy `https://music.amazon.de/albums/<ALBUM_ASIN>?trackAsin=<TRACK_ASIN>` input and noncanonical direct-track input are converted. In strict `--check-only` mode they are rejected until normalized.
+- A missing or invalid track ASIN is a hard failure. An `amazon_album_id` is optional metadata and is never a playback prerequisite. If `amazon_track_asin` is present, it must agree with the URL's track identity.
+- Do not convert an unrelated or suspicious nonempty URL into a legitimate-looking one using fallback metadata.
 
-Do not manually concatenate final URLs in the reasoning loop. Let `scripts/validate_pack.py` canonicalize them in normal mode, then require `--check-only` to pass.
+## Validation and reporting contract
 
-## Amazon lookup budget
+- `playlist_song_count` is **required** and must equal the final `songs` array length; at least 20 OK songs are required for READY.
+- Every retained song must be `OK`; do not include `PRUEFEN`/`AUSSCHLIESSEN` entries in the final `songs` array.
+- Strict validation rejects malformed/noncanonical URLs, bad years, duplicate track ASINs (even without the optional ASIN metadata), duplicate song IDs, count differences, and hash tampering.
+- Keep an explicit list of unresolved songs **outside** the final JSON. Do not claim that a partially processed playlist is complete.
+- Count `amazon_fallback_lookups`; with playlist track ASINs this should normally be zero.
+- The app's ability to open a URL and the validation of its URL format are different claims. Do not claim end-to-end autoplay was checked for every song unless the user actually tested them.
 
-Use Amazon playlist retrieval as the default and MusicBrainz as the per-song lookup. Individual Amazon track/album page reads are exceptional fallback operations, never the standard loop.
-
-Track and report `amazon_fallback_lookups` internally while building. A normal successful build should have far fewer fallback lookups than playlist tracks.
-
-## MusicBrainz matching policy
-
-For ordinary tracks, do not require ISRC, exact album match, duration equality, or a second source. A song is `OK` when:
-
-- the playlist provides a real playable Amazon link with a recoverable `trackAsin`;
-- title + main artist clearly match a MusicBrainz recording;
-- a plausible earliest official release year exists;
-- no material version conflict is visible.
-
-Use `PRUEFEN` only for genuine unresolved version/year ambiguity, not ordinary metadata imperfections.
-
-## Game pack contract
-
-Required song fields:
-
-- `song_id`
-- `title`
-- `artist`
-- `scoring_year`
-- `amazon_play_url`
-- `verification_status = "OK"`
-- `verification_notes`
-
-Optional song fields, only when already grounded:
-
-- `album`
-- `version`
-- `duration_seconds`
-- `amazon_album_id`
-- `amazon_track_asin`
-- `musicbrainz_recording_id`
-- `isrc`
-
-Do not browse Amazon merely to populate optional fields.
-
-## Validation contract
-
-The offline validator must fail for missing required fields, non-OK songs, invalid years, invalid/non-canonical Amazon play URLs in check-only mode, duplicate `song_id`, duplicate optional ASINs when present, fewer than 20 songs, count mismatches, or hash tampering.
-
-In normal mode, the validator may normalize a structurally usable Amazon album URL by:
-
-- extracting the album ASIN from `/albums/<ASIN>`;
-- extracting `trackAsin` from the query string;
-- removing unrelated query parameters;
-- writing the canonical `trackAsin=<ASIN>&do=play` query.
-
-A missing or invalid album ASIN or `trackAsin` is not repairable and must fail validation.
-
-If optional `amazon_album_id` or `amazon_track_asin` are present, the validator must verify that they match the canonical play URL. Their absence must not fail validation.
-
-## Final report
-
-Print the READY report only when the raw Drive file passed metadata, raw-byte readback, and strict validation. Otherwise report local validation separately and mark `Drive: FAILED/UNVERIFIED`; do not describe the overall handoff as complete.
-
-```text
-NERDIO PACK READY
-Playlist: ...
-Pack ID: ...
-Playlist-Songs: xx
-OK-Songs: xx
-Ausgeschlossen/unklar: xx
-Amazon-Fallback-Lookups: xx
-Validierung: PASSED
-Drive: PASSED
-```
+Report the complete source song count, OK song count, unresolved count, fallback lookups, validation status, and Drive status. Never start the game or reveal gameplay links in sequence.
 
 ## Bundled resources
 
