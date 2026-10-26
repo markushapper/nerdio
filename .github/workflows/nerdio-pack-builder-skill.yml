@@ -75,4 +75,4 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release delete "$TAG" --cleanup-tag --yes
           fi
-          gh release create "$TAG" dist/skill.zip --target "$GITHUB_SHA" --title "Nerdio Pack Builder" --notes "Direct install package for ChatGPT. Download skill.zip from this release and upload that file to Skills." --latest
+          gh release create "$TAG" dist/skill.zip --target "$GITHUB_SHA" --title "Nerdio Pack Builder" --notes "Direct install package for ChatGPT. Download skill.zip from this release and upload that file to Skills." --latest=false

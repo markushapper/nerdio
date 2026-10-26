@@ -43,3 +43,24 @@ Wenn `status` vorhanden ist, muss es `READY` sein.
 3. Die Spieler notieren/bewerten außerhalb der App.
 4. `Lösung aufdecken` zeigt Titel, Interpret und Wertungsjahr.
 5. `Nächster Song` fährt in der gemischten Reihenfolge fort.
+
+
+## Versionierte Releases
+
+Ein Git-Tag im Format `vMAJOR.MINOR.PATCH` (zum Beispiel `v0.3.0`) startet den Workflow **Release Nerdio**.
+
+Das Release enthält aus exakt demselben Commit:
+
+- ein signiertes Android-APK `nerdio-vMAJOR.MINOR.PATCH.apk`
+- den geprüften Nerdio Pack Builder als `skill.zip`
+
+Vor dem ersten versionierten Release müssen unter **Settings → Secrets and variables → Actions** diese Repository-Secrets angelegt werden:
+
+- `NERDIO_ANDROID_KEYSTORE_BASE64` – Base64-kodierte Release-Keystore-Datei
+- `NERDIO_ANDROID_KEY_ALIAS` – Alias des Signaturschlüssels
+- `NERDIO_ANDROID_KEY_PASSWORD` – Passwort des Schlüssels
+- `NERDIO_ANDROID_STORE_PASSWORD` – Passwort des Keystores
+
+Der private Keystore und seine Passwörter gehören niemals ins Repository. Solange derselbe Keystore verwendet wird und der Versionscode steigt, kann Android spätere Nerdio-Releases als Update über eine bestehende Installation installieren.
+
+Der separate Workflow **Build Nerdio Pack Builder Skill** veröffentlicht weiterhin zusätzlich den jeweils neuesten Skill unter dem festen Tag `nerdio-pack-builder-latest`. Dieser Skill-only-Release ersetzt jedoch nicht das aktuelle versionierte Nerdio-Release als GitHub-`Latest`.
